@@ -2,7 +2,7 @@ import CONSTANTS from "./constants.js";
 
 import { v4 } from "uuid";
 import prims = require("prism-media");
-import ffmpeg from "ffmpeg";
+import ffmpeg from "fluent-ffmpeg";
 import { createWriteStream } from "node:fs";
 import { pipeline as pip } from "node:stream";
 
@@ -14,7 +14,6 @@ import {
   Guild,
   Message,
   MessageAttachment,
-  StageChannel,
   TextChannel,
   User,
   VoiceChannel,
@@ -37,6 +36,7 @@ import {
   EndBehaviorType,
   createAudioResource,
   AudioPlayerStatus,
+  PlayerSubscription,
 } from "@discordjs/voice";
 
 import wavFile from "wavefile";
@@ -46,9 +46,12 @@ export class BotAI extends Client {
     super(options);
   }
 
+  prefix = CONSTANTS.Prefix;
+
   synthesizer: TextToAudioPipeline;
   pipe: AutomaticSpeechRecognitionPipeline;
   VoiceConnection: VoiceConnection;
+  VoicePlayer: PlayerSubscription | undefined;
 
   VoiceChannel: VoiceChannel;
   LogsChannel: TextChannel;
@@ -86,14 +89,14 @@ export class BotAI extends Client {
     console.log("initializing all of the Channels ....");
 
     this.on("ready", async (Client) => {
-      await this.ReStartChannels();
+      await this.ReStartChannels(true);
     });
   }
 
   async createListeningStream() {
     console.log("creating a audio stream");
     const opusStream = this.VoiceConnection.receiver.subscribe(
-      CONSTANTS.ListeningUserId,
+      this.ListeningUserId.id,
       {
         end: { behavior: EndBehaviorType.AfterSilence, duration: 100 },
       }
@@ -118,24 +121,25 @@ export class BotAI extends Client {
         console.log("created the audio stream");
         console.log("converting the audio stream to a wav format");
 
-        const process = new ffmpeg(`${filename}.pcm`);
+        ffmpeg()
+          .input(`${filename}.pcm`)
+          .audioFrequency(16000)
+          .audioChannels(1)
+          .audioCodec("pcm_s16le")
+          .output(filename + ".wav")
+          .on("end", () => {
+            console.log("The audio was successfully converted to a wav");
+            this.UserAudioFileName = filename + ".wav";
 
-        process.then(
-          (audio) => {
-            audio.save(filename + ".wav", (err, file) => {
-              console.log("The audio was successfully converted to a wav");
-              this.UserAudioFileName = filename + ".wav";
-
-              console.log("Delete the .pcm file");
-              fs.unlinkSync(`${filename}.pcm`);
-              this.Listening = false;
-            });
-          },
-          (err) => {
-            console.log("Error on convert to audio");
+            console.log("Delete the .pcm file");
+            fs.unlinkSync(`${filename}.pcm`);
             this.Listening = false;
-          }
-        );
+          })
+          .on("error", (err) => {
+            console.log("Error on convert to audio :" + err);
+            this.Listening = false;
+          })
+          .run();
       }
     });
   }
@@ -194,11 +198,23 @@ export class BotAI extends Client {
     console.log("Converted successfully the text to speech");
   }
 
-  async ReStartChannels() {
-    const VoiceChannel = this.channels.cache.get(CONSTANTS.VoiceChannel);
+  async ReStartChannels(firstStart: boolean = false) {
+    let ListeningUserId;
+    let Guild;
+    let VoiceChannel;
+    if (firstStart) {
+      ListeningUserId = this.users.cache.get(CONSTANTS.ListeningUserId);
+
+      Guild = this.guilds.cache.get(CONSTANTS.Guild);
+      VoiceChannel = this.channels.cache.get(CONSTANTS.VoiceChannel);
+    } else {
+      ListeningUserId = this.ListeningUserId;
+
+      Guild = this.Guild;
+      VoiceChannel = this.VoiceChannel;
+    }
     const LogsChannel = this.channels.cache.get(CONSTANTS.LogsChannel);
     const IAChannel = this.channels.cache.get(CONSTANTS.IAChannel);
-    const Guild = this.guilds.cache.get(CONSTANTS.Guild);
 
     if (
       !VoiceChannel ||
@@ -228,8 +244,6 @@ export class BotAI extends Client {
 
     console.log("Charging the user to listening...");
 
-    const ListeningUserId = this.users.cache.get(CONSTANTS.ListeningUserId);
-
     if (!ListeningUserId)
       return console.log("The user not exist or is not available");
 
@@ -256,7 +270,11 @@ export class BotAI extends Client {
 
     await entersState(this.VoiceConnection, VoiceConnectionStatus.Ready, 20e3);
 
-    this.VoiceConnection.subscribe(player);
+    if (this.VoicePlayer) {
+      this.VoicePlayer.unsubscribe();
+    }
+
+    this.VoicePlayer = this.VoiceConnection.subscribe(player);
 
     console.log("the player and the voice connection are ready");
 
@@ -354,7 +372,7 @@ export class BotAI extends Client {
       });
 
       if (!transcribe) {
-        fs.unlinkSync(this.UserAudioFileName);
+        // fs.unlinkSync(this.UserAudioFileName);
         this.UserAudioFileName = undefined;
         return console.log("The text transcribed is null ");
       }

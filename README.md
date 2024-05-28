@@ -43,3 +43,13 @@ Copy the bot's ID and put it in the `.env` file.
    ```
 
 That's all! You can now talk to the bot when it's connected. If you encounter any problems, feel free to ask for help.
+
+## Commands
+
+With your prefix and the command voice you can change the voice channel of the bot if you want to change the voice channel connection
+
+`<prefix>voice <voice channel id> `
+
+Other command is user when you uses this command and mention the user you change the user that the bot is listening to
+
+`<prefix>user <user mention> `
