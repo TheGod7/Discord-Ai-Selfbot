@@ -3,7 +3,7 @@ import CONSTANTS from "./constants.js";
 import { v4 } from "uuid";
 import prims = require("prism-media");
 import ffmpeg from "fluent-ffmpeg";
-import { createWriteStream } from "node:fs";
+import { createWriteStream } from "fs";
 import { pipeline as pip } from "node:stream";
 
 import fs from "fs";
